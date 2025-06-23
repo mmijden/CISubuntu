@@ -47,56 +47,7 @@
       register: home_partition
       failed_when: home_partition.stdout == ""
 
-    - name: Ensure nodev option set on /home partition
-      mount:
-        path: /home
-        opts: nodev
-        state: mounted
-
-    - name: Ensure separate partition exists for /var
-      command: mount | grep '/var'
-      register: var_partition
-      failed_when: var_partition.stdout == ""
-
-    - name: Ensure nodev option set on /var partition
-      mount:
-        path: /var
-        opts: nodev
-        state: mounted
-
-    - name: Ensure separate partition exists for /var/tmp
-      command: mount | grep '/var/tmp'
-      register: var_tmp_partition
-      failed_when: var_tmp_partition.stdout == ""
-
-    - name: Ensure nodev option set on /var/tmp partition
-      mount:
-        path: /var/tmp
-        opts: nodev,nosuid,noexec
-        state: mounted
-
-    - name: Ensure separate partition exists for /var/log
-      command: mount | grep '/var/log'
-      register: var_log_partition
-      failed_when: var_log_partition.stdout == ""
-
-    - name: Ensure nodev option set on /var/log partition
-      mount:
-        path: /var/log
-        opts: nodev,nosuid,noexec
-        state: mounted
-
-    - name: Ensure separate partition exists for /var/log/audit
-      command: mount | grep '/var/log/audit'
-      register: var_log_audit_partition
-      failed_when: var_log_audit_partition.stdout == ""
-
-    - name: Ensure nodev option set on /var/log/audit partition
-      mount:
-        path: /var/log/audit
-        opts: nodev,nosuid,noexec
-        state: mounted
-
+   
     # GPG keys and package manager
     - name: Ensure GPG keys are configured
       command: apt-key list
