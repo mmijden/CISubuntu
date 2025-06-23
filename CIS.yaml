@@ -40,34 +40,7 @@
       command: modprobe -r usb-storage
       ignore_errors: yes
 
-    - name: Ensure unused filesystems kernel modules are not available
-      command: modprobe -r <module_name>  # Vervang <module_name> door ongebruikte modules
-      ignore_errors: yes
-
-    # Partitioning and mount options
-    - name: Ensure /tmp is a separate partition
-      command: mount | grep '/tmp'
-      register: tmp_partition
-      failed_when: tmp_partition.stdout == ""
-
-    - name: Ensure nodev option set on /tmp partition
-      mount:
-        path: /tmp
-        fstype: tmpfs
-        opts: nodev,nosuid,noexec
-        state: mounted
-
-    - name: Ensure /dev/shm is a separate partition
-      command: mount | grep '/dev/shm'
-      register: shm_partition
-      failed_when: shm_partition.stdout == ""
-
-    - name: Ensure nodev option set on /dev/shm partition
-      mount:
-        path: /dev/shm
-        fstype: tmpfs
-        opts: nodev,nosuid,noexec
-        state: mounted
+    
 
     - name: Ensure separate partition exists for /home
       command: mount | grep '/home'
