@@ -40,13 +40,6 @@
       command: modprobe -r usb-storage
       ignore_errors: yes
 
-    
-
-    - name: Ensure separate partition exists for /home
-      command: mount | grep '/home'
-      register: home_partition
-      failed_when: home_partition.stdout == ""
-
    
     # GPG keys and package manager
     - name: Ensure GPG keys are configured
