@@ -1,6 +1,6 @@
 ---
 - name: CIS Controls v8 Docker Security Playbook
-  hosts: all
+  hosts: docker_hosts
   become: true
   tasks:
 
@@ -10,11 +10,20 @@
       failed_when: partition_check.rc != 0
       changed_when: false
 
+    - name: Ensure /etc/docker/daemon.json exists
+      file:
+        path: /etc/docker/daemon.json
+        state: touch
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Ensure only trusted users are allowed to control Docker daemon
       lineinfile:
         path: /etc/docker/daemon.json
         line: '"hosts": ["unix:///var/run/docker.sock"]'
         state: present
+        create: yes
 
     - name: Ensure auditing is configured for the Docker daemon
       command: "auditctl -l | grep /usr/bin/dockerd"
@@ -76,15 +85,3 @@
     - name: Ensure the logging level is set to 'info'
       lineinfile:
         path: /etc/docker/daemon.json
-        line: '"log-level": "info"'
-        state: present
-
-    - name: Ensure Docker is allowed to make changes to iptables
-      command: "iptables -L | grep DOCKER"
-      register: iptables_check
-      failed_when: iptables_check.rc != 0
-      changed_when: false
-
-    - name: Ensure insecure registries are not used
-      lineinfile:
-        path: /etc/docker/
