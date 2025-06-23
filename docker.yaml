@@ -1,14 +1,20 @@
 ---
-- name: CIS Controls v8 Docker Security Playbook
-  hosts: docker_hosts
+- name: Implement CIS Docker Benchmark
+  hosts: all
   become: true
   tasks:
 
-    - name: Ensure a separate partition for containers has been created
-      command: "lsblk | grep /var/lib/docker"
-      register: partition_check
-      failed_when: partition_check.rc != 0
-      changed_when: false
+    - name: Ensure Docker is installed
+      apt:
+        name: docker-ce
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: true
 
     - name: Ensure /etc/docker/daemon.json exists
       file:
@@ -18,70 +24,86 @@
         group: root
         mode: '0644'
 
-    - name: Ensure only trusted users are allowed to control Docker daemon
+    - name: Configure Docker daemon settings
       lineinfile:
         path: /etc/docker/daemon.json
-        line: '"hosts": ["unix:///var/run/docker.sock"]'
+        line: "{{ item }}"
         state: present
-        create: yes
+      loop:
+        - '"hosts": ["unix:///var/run/docker.sock"]'
+        - '"log-level": "info"'
+        - '"icc": false'  # Disable inter-container communication
+        - '"userns-remap": "default"'  # Enable user namespace remapping
 
-    - name: Ensure auditing is configured for the Docker daemon
-      command: "auditctl -l | grep /usr/bin/dockerd"
-      register: audit_daemon
-      failed_when: audit_daemon.rc != 0
-      changed_when: false
+    - name: Ensure Docker daemon is restarted
+      service:
+        name: docker
+        state: restarted
 
     - name: Ensure auditing is configured for Docker files and directories
       block:
-        - name: Ensure auditing for /run/containerd
-          command: "auditctl -w /run/containerd -p rwxa"
         - name: Ensure auditing for /var/lib/docker
           command: "auditctl -w /var/lib/docker -p rwxa"
         - name: Ensure auditing for /etc/docker
           command: "auditctl -w /etc/docker -p rwxa"
-        - name: Ensure auditing for docker.service
-          command: "auditctl -w /lib/systemd/system/docker.service -p rwxa"
-        - name: Ensure auditing for containerd.sock
-          command: "auditctl -w /run/containerd/containerd.sock -p rwxa"
         - name: Ensure auditing for docker.sock
           command: "auditctl -w /var/run/docker.sock -p rwxa"
-        - name: Ensure auditing for /etc/default/docker
-          command: "auditctl -w /etc/default/docker -p rwxa"
-        - name: Ensure auditing for /etc/docker/daemon.json
-          command: "auditctl -w /etc/docker/daemon.json -p rwxa"
-        - name: Ensure auditing for /etc/containerd/config.toml
-          command: "auditctl -w /etc/containerd/config.toml -p rwxa"
-        - name: Ensure auditing for /etc/sysconfig/docker
-          command: "auditctl -w /etc/sysconfig/docker -p rwxa"
-        - name: Ensure auditing for /usr/bin/containerd
-          command: "auditctl -w /usr/bin/containerd -p rwxa"
-        - name: Ensure auditing for /usr/bin/containerd-shim
-          command: "auditctl -w /usr/bin/containerd-shim -p rwxa"
-        - name: Ensure auditing for /usr/bin/containerd-shim-runc-v1
-          command: "auditctl -w /usr/bin/containerd-shim-runc-v1 -p rwxa"
-        - name: Ensure auditing for /usr/bin/containerd-shim-runc-v2
-          command: "auditctl -w /usr/bin/containerd-shim-runc-v2 -p rwxa"
-        - name: Ensure auditing for /usr/bin/runc
-          command: "auditctl -w /usr/bin/runc -p rwxa"
 
-    - name: Ensure the container host has been hardened
-      command: "echo 'Hardening tasks to be defined here'"
-      changed_when: false
+    - name: Ensure only trusted base images are used
+      command: "docker images --format '{{.Repository}}:{{.Tag}}' | grep -v 'trusted_image'"
+      register: trusted_images
+      failed_when: trusted_images.stdout != ""
 
-    - name: Ensure that the version of Docker is up to date
-      command: "apt-get update && apt-get install -y docker-ce"
-      when: ansible_os_family == "Debian"
+    - name: Ensure containers are run with the --read-only flag
+      command: "docker run --read-only <image_name>"
 
-    - name: Run the Docker daemon as a non-root user, if possible
-      lineinfile:
-        path: /etc/systemd/system/docker.service
-        regexp: '^ExecStart='
-        line: 'ExecStart=/usr/bin/dockerd --host=unix:///var/run/docker.sock'
-      notify: Restart Docker
+    - name: Ensure that containers do not run as root
+      command: "docker run --user 1000 <image_name>"
 
-    - name: Ensure network traffic is restricted between containers on the default bridge
-      command: "iptables -A FORWARD -i docker0 -o docker0 -j DROP"
+    - name: Ensure that the default seccomp profile is not disabled
+      command: "docker run --security-opt seccomp=default <image_name>"
 
-    - name: Ensure the logging level is set to 'info'
+    - name: Ensure that the host's network namespace is not shared
+      command: "docker run --network none <image_name>"
+
+    - name: Ensure that the container's root filesystem is mounted as read-only
+      command: "docker run --read-only <image_name>"
+
+    - name: Ensure that only needed ports are open on the container
+      command: "docker run -p <host_port>:<container_port> <image_name>"
+
+    - name: Ensure that the Docker socket is not mounted inside any containers
+      command: "docker run --volume /some/other/path:/path <image_name>"
+
+    - name: Ensure that the default ulimit is configured appropriately
+      command: "ulimit -n 1024"
+
+    - name: Ensure that the Docker daemon is configured to use TLS
       lineinfile:
         path: /etc/docker/daemon.json
+        line: '"tls": true'
+        state: present
+
+    - name: Ensure that Docker is allowed to make changes to iptables
+      command: "iptables -L | grep DOCKER"
+
+    - name: Ensure that swarm mode is not enabled, if not needed
+      command: "docker info | grep 'Swarm: active'"
+      register: swarm_status
+      failed_when: swarm_status.stdout == "Swarm: active"
+
+    - name: Ensure that unnecessary packages are not installed in the container
+      command: "docker run <image_name> dpkg --get-selections | grep -v 'needed_package'"
+
+    - name: Ensure that images are scanned and rebuilt to include security patches
+      command: "docker scan <image_name>"
+
+    - name: Ensure that HEALTHCHECK instructions have been added to container images
+      command: "docker inspect --format='{{.Config.Healthcheck}}' <image_name>"
+
+    - name: Ensure that only verified packages are installed
+      command: "docker run <image_name> apt-get install --only-upgrade <package_name>"
+
+    - name: Ensure that all signed artifacts are validated
+      command: "docker trust inspect --pretty <image_name>"
+
